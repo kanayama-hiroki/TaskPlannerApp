@@ -1,35 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 安全領域（中央 66dp）に収まる、カレンダーと右上がりの線のアイコン -->
+<!-- テーマアイコン（Android 13 以降）用。1色で描く -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- カレンダー本体 -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M36,32h36a6,6 0 0 1 6,6v38a6,6 0 0 1 -6,6h-36a6,6 0 0 1 -6,-6v-38a6,6 0 0 1 6,-6z" />
-    <!-- 上部の帯 -->
+        android:fillColor="#00000000"
+        android:pathData="M36,33h36a5,5 0 0 1 5,5v38a5,5 0 0 1 -5,5h-36a5,5 0 0 1 -5,-5v-38a5,5 0 0 1 5,-5z"
+        android:strokeColor="#000000"
+        android:strokeWidth="3" />
     <path
-        android:fillColor="#C5CAE9"
-        android:pathData="M36,32h36a6,6 0 0 1 6,6v6h-48v-6a6,6 0 0 1 6,-6z" />
-    <!-- リング -->
+        android:fillColor="#000000"
+        android:pathData="M31,38a5,5 0 0 1 5,-5h36a5,5 0 0 1 5,5v6h-46z" />
     <path
-        android:fillColor="#FFC107"
+        android:fillColor="#000000"
         android:pathData="M40,27h4a2,2 0 0 1 2,2v9a2,2 0 0 1 -2,2h-4a2,2 0 0 1 -2,-2v-9a2,2 0 0 1 2,-2z" />
     <path
-        android:fillColor="#FFC107"
+        android:fillColor="#000000"
         android:pathData="M64,27h4a2,2 0 0 1 2,2v9a2,2 0 0 1 -2,2h-4a2,2 0 0 1 -2,-2v-9a2,2 0 0 1 2,-2z" />
-    <!-- 右上がりの線（成長） -->
     <path
         android:fillColor="#00000000"
         android:pathData="M37,74L47,64L55,69L69,54"
-        android:strokeColor="#3949AB"
+        android:strokeColor="#000000"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="4" />
-    <!-- 到達点 -->
     <path
-        android:fillColor="#FFC107"
+        android:fillColor="#000000"
         android:pathData="M69,49.5a4.5,4.5 0 1 1 0,9a4.5,4.5 0 1 1 0,-9z" />
 </vector>
