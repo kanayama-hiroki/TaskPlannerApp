@@ -19,6 +19,15 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     var tasks by mutableStateOf(repository.load())
         private set
 
+    /** 1日に使える作業時間の上限。これを超える日は警告する。 */
+    var maxDailyHours by mutableStateOf(repository.loadMaxDailyHours())
+        private set
+
+    fun changeMaxDailyHours(delta: Double) {
+        maxDailyHours = (maxDailyHours + delta).coerceIn(0.5, 16.0)
+        repository.saveMaxDailyHours(maxDailyHours)
+    }
+
     fun add(name: String, deadline: LocalDate, totalHours: Double, pace: Pace) {
         val task = Task(
             id = UUID.randomUUID().toString(),

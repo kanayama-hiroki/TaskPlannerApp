@@ -108,3 +108,30 @@ class PlannerTest {
         assertEquals(1f, Planner.progress(task), 1e-6f)
     }
 }
+
+class PlannerLimitTest {
+    private val d = { day: Int -> LocalDate.of(2026, 10, day) }
+
+    @Test
+    fun earliestFeasibleDeadlineFitsWithinDailyLimit() {
+        // 6h を 1日 2h 以内: 作業3日 + 予備日1日 + 締切日 → 10/1 開始なら 10/5 締切（作業 10/1〜10/3、予備 10/4）
+        val deadline = Planner.earliestFeasibleDeadline(d(1), 6.0, 2.0)!!
+        val plan = Planner.dailyHours(d(1), deadline, 6.0)
+        assertTrue(plan.values.max() <= 2.0 + 1e-9)
+        // 1日早い締切では上限を超える
+        val earlier = Planner.dailyHours(d(1), deadline.minusDays(1), 6.0)
+        assertTrue(earlier.isEmpty() || earlier.values.max() > 2.0)
+    }
+
+    @Test
+    fun overloadedDaysListsDaysOverLimit() {
+        val totals = mapOf(d(1) to 2.0, d(2) to 3.5, d(3) to 3.0)
+        assertEquals(listOf(d(2)), Planner.overloadedDays(totals, 3.0))
+    }
+
+    @Test
+    fun invalidInputsGiveNull() {
+        assertNull(Planner.earliestFeasibleDeadline(d(1), 0.0, 2.0))
+        assertNull(Planner.earliestFeasibleDeadline(d(1), 5.0, 0.0))
+    }
+}

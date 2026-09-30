@@ -87,6 +87,23 @@ object Planner {
         return task.loggedHours / (mastery / 100.0)
     }
 
+    /** 上限（1日あたり）に収まる、最も早い締切日。見つからなければ null。 */
+    fun earliestFeasibleDeadline(startDate: LocalDate, totalHours: Double, maxDailyHours: Double): LocalDate? {
+        if (totalHours <= 0.0 || maxDailyHours <= 0.0) return null
+        var deadline = startDate
+        repeat(MAX_SEARCH_DAYS) {
+            val plan = dailyHours(startDate, deadline, totalHours)
+            if (plan.isNotEmpty() && plan.values.max() <= maxDailyHours + 1e-9) return deadline
+            deadline = deadline.plusDays(1)
+        }
+        return null
+    }
+
+    /** 1日の合計が上限を超える日の一覧。 */
+    fun overloadedDays(totals: Map<LocalDate, Double>, maxDailyHours: Double): List<LocalDate> =
+        totals.filterValues { it > maxDailyHours + 1e-9 }.keys.sorted()
+
+    private const val MAX_SEARCH_DAYS = 365 * 3
     private const val BEHIND_RATIO = 1.25
     private const val MIN_MASTERY_FOR_ESTIMATE = 10
     private const val MIN_LOGGED_FOR_ESTIMATE = 1.0

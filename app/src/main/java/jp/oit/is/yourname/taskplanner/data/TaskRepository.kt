@@ -53,7 +53,16 @@ class TaskRepository(context: Context) {
         prefs.edit().putString(KEY, array.toString()).apply()
     }
 
-    private companion object {
-        const val KEY = "tasks_json"
+    fun loadMaxDailyHours(): Double =
+        prefs.getFloat(KEY_MAX_DAILY, DEFAULT_MAX_DAILY_HOURS.toFloat()).toDouble()
+
+    fun saveMaxDailyHours(hours: Double) {
+        prefs.edit().putFloat(KEY_MAX_DAILY, hours.toFloat()).apply()
+    }
+
+    companion object {
+        const val DEFAULT_MAX_DAILY_HOURS = 3.0
+        private const val KEY = "tasks_json"
+        private const val KEY_MAX_DAILY = "max_daily_hours"
     }
 }

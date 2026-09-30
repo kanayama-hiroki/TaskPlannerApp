@@ -77,6 +77,8 @@ fun TaskPlannerApp(viewModel: TaskViewModel) {
                     showForm = false
                 },
                 onCancel = { showForm = false },
+                existingTasks = viewModel.tasks,
+                maxDailyHours = viewModel.maxDailyHours,
                 modifier = Modifier.padding(innerPadding),
             )
         } else {
@@ -87,6 +89,8 @@ fun TaskPlannerApp(viewModel: TaskViewModel) {
                 onAddLog = viewModel::addLog,
                 onSetMastery = viewModel::setMastery,
                 onApplyTotalHours = viewModel::applyTotalHours,
+                maxDailyHours = viewModel.maxDailyHours,
+                onChangeMaxDailyHours = viewModel::changeMaxDailyHours,
                 onAddToCalendarApp = { task ->
                     if (!openCalendarIntent(context, task)) {
                         Toast.makeText(context, "カレンダーアプリが見つかりません", Toast.LENGTH_SHORT).show()

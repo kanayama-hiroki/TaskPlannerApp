@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import jp.oit.`is`.yourname.taskplanner.data.Pace
+import jp.oit.`is`.yourname.taskplanner.data.Task
 import jp.oit.`is`.yourname.taskplanner.planner.Planner
 import jp.oit.`is`.yourname.taskplanner.planner.StudyEstimator
 import jp.oit.`is`.yourname.taskplanner.planner.StudyLevel
@@ -27,6 +28,8 @@ import java.time.ZoneOffset
 fun TaskFormScreen(
     onSave: (name: String, deadline: LocalDate, totalHours: Double, pace: Pace) -> Unit,
     onCancel: () -> Unit,
+    existingTasks: List<Task>,
+    maxDailyHours: Double,
     modifier: Modifier = Modifier,
 ) {
     BackHandler(onBack = onCancel)
@@ -163,6 +166,34 @@ fun TaskFormScreen(
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.padding(16.dp),
                     )
+                }
+
+                // 既存の課題と合わせて、1日の上限を超える日がないか確認する
+                val draft = Task("draft", name, today, deadline, hours, pace = pace)
+                val totals = Planner.totalsByDate(existingTasks + draft, today)
+                val over = Planner.overloadedDays(totals, maxDailyHours)
+                if (over.isNotEmpty()) {
+                    val feasible = Planner.earliestFeasibleDeadline(today, hours * pace.factor, maxDailyHours)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                "この計画だと、1日の上限（${formatHours(maxDailyHours)}）を超える日が${over.size}日あります。",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = if (feasible != null) {
+                                    "この課題だけなら、締切を $feasible 以降にすると上限に収まります。締切や時間を見直しませんか？"
+                                } else {
+                                    "締切や時間を見直しませんか？"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    }
                 }
             }
         }

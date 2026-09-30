@@ -20,6 +20,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import jp.oit.`is`.yourname.taskplanner.data.Task
@@ -46,6 +48,8 @@ fun CalendarScreen(
     onAddLog: (id: String, date: LocalDate, deltaHours: Double) -> Unit,
     onSetMastery: (id: String, mastery: Int) -> Unit,
     onApplyTotalHours: (id: String, totalHours: Double) -> Unit,
+    maxDailyHours: Double,
+    onChangeMaxDailyHours: (Double) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var monthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
@@ -99,6 +103,7 @@ fun CalendarScreen(
                             DayCell(
                                 date = date,
                                 hours = totals[date] ?: 0.0,
+                                overLimit = (totals[date] ?: 0.0) > maxDailyHours + 1e-9,
                                 isDeadline = date in deadlines,
                                 isToday = date == LocalDate.now(),
                                 isSelected = date == selected,
@@ -109,6 +114,9 @@ fun CalendarScreen(
                 }
             }
         }
+
+        val overDaysInMonth = Planner.overloadedDays(totals, maxDailyHours).count { YearMonth.from(it) == month }
+        DailyLimitRow(maxDailyHours, overDaysInMonth, onChangeMaxDailyHours)
 
         Spacer(Modifier.height(16.dp))
         DayDetail(date = selected, today = today, tasks = tasks, onAddLog = onAddLog)
@@ -130,6 +138,7 @@ fun CalendarScreen(
 private fun DayCell(
     date: LocalDate,
     hours: Double,
+    overLimit: Boolean,
     isDeadline: Boolean,
     isToday: Boolean,
     isSelected: Boolean,
@@ -160,14 +169,45 @@ private fun DayCell(
     ) {
         Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelLarge)
         Text(
-            text = if (hours > 0) formatHours(hours) else " ",
+            text = if (hours > 0) formatHours(hours) + (if (overLimit) "!" else "") else " ",
             style = MaterialTheme.typography.labelSmall,
+            color = if (overLimit) MaterialTheme.colorScheme.error else Color.Unspecified,
+            fontWeight = if (overLimit) FontWeight.Bold else null,
         )
         Text(
             text = if (isDeadline) "締切" else " ",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.error,
         )
+    }
+}
+
+@Composable
+private fun DailyLimitRow(maxDailyHours: Double, overDays: Int, onChange: (Double) -> Unit) {
+    Column(Modifier.padding(top = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("1日に使える時間の上限: ${formatHours(maxDailyHours)}", style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.weight(1f))
+            OutlinedButton(onClick = { onChange(-0.5) }) { Text("−") }
+            Spacer(Modifier.width(8.dp))
+            OutlinedButton(onClick = { onChange(0.5) }) { Text("＋") }
+        }
+        if (overDays > 0) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "上限を超える日が${overDays}日あります（赤い「!」の日）。締切や時間を見直してみよう",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
     }
 }
 
