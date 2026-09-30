@@ -2,6 +2,8 @@ package jp.oit.`is`.yourname.taskplanner.planner
 
 import jp.oit.`is`.yourname.taskplanner.data.Task
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
+import kotlin.math.roundToInt
 
 enum class PlanStatus { DONE, ON_TRACK, BEHIND, OVERDUE }
 
@@ -117,6 +119,26 @@ object Planner {
     fun reestimatedTotal(task: Task): Double? {
         val remaining = remainingHoursByRate(task) ?: return null
         return task.loggedHours + remaining
+    }
+
+    /**
+     * 最初の習得度の記録を出発点に、締切日に100%へ届く一定ペースだった場合の、指定日の目標習得度。
+     * 習得度の記録がない、または出発点が締切以降なら null。
+     */
+    fun targetMastery(task: Task, date: LocalDate): Double? {
+        val first = task.masteryLogs.toSortedMap().entries.firstOrNull() ?: return null
+        val totalDays = ChronoUnit.DAYS.between(first.key, task.deadline)
+        if (totalDays <= 0) return null
+        val elapsed = ChronoUnit.DAYS.between(first.key, date).coerceIn(0, totalDays)
+        return first.value + (100 - first.value) * elapsed.toDouble() / totalDays
+    }
+
+    /** 最新の習得度が、今日の目標より何ポイント先行（＋）・遅れ（−）しているか。記録が2日未満なら null。 */
+    fun masteryGap(task: Task, today: LocalDate): Int? {
+        if (task.masteryLogs.size < 2) return null
+        val latest = task.mastery ?: return null
+        val target = targetMastery(task, today) ?: return null
+        return (latest - target).roundToInt()
     }
 
     /** 上限（1日あたり）に収まる、最も早い締切日。見つからなければ null。 */

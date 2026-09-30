@@ -158,3 +158,34 @@ class PlannerLimitTest {
         assertNull(Planner.earliestFeasibleDeadline(d(1), 5.0, 0.0))
     }
 }
+
+class PlannerMasteryTargetTest {
+    private val d = { day: Int -> LocalDate.of(2026, 10, day) }
+
+    @Test
+    fun targetMasteryRisesLinearlyToHundredAtDeadline() {
+        val task = Task("a", "A", d(1), d(11), 10.0, masteryLogs = mapOf(d(1) to 10))
+        assertEquals(10.0, Planner.targetMastery(task, d(1))!!, 1e-9)
+        assertEquals(55.0, Planner.targetMastery(task, d(6))!!, 1e-9)
+        assertEquals(100.0, Planner.targetMastery(task, d(11))!!, 1e-9)
+        assertEquals(100.0, Planner.targetMastery(task, d(20))!!, 1e-9) // 締切後は100%で頭打ち
+    }
+
+    @Test
+    fun masteryGapComparesLatestWithTodaysTarget() {
+        val ahead = Task("a", "A", d(1), d(11), 10.0, masteryLogs = mapOf(d(1) to 10, d(6) to 60))
+        assertEquals(5, Planner.masteryGap(ahead, today = d(6)))
+        val behind = ahead.copy(masteryLogs = mapOf(d(1) to 10, d(6) to 40))
+        assertEquals(-15, Planner.masteryGap(behind, today = d(6)))
+    }
+
+    @Test
+    fun noTargetWithoutEnoughRecords() {
+        val none = Task("a", "A", d(1), d(11), 10.0)
+        assertNull(Planner.targetMastery(none, d(3)))
+        val one = none.copy(masteryLogs = mapOf(d(1) to 10))
+        assertNull(Planner.masteryGap(one, d(3)))
+        val pastDeadline = none.copy(deadline = d(1), masteryLogs = mapOf(d(1) to 10))
+        assertNull(Planner.targetMastery(pastDeadline, d(1)))
+    }
+}

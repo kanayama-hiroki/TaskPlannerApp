@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -377,9 +378,21 @@ private fun TaskProgressCard(
                     onValueChange = { sliderValue = it },
                     onValueChangeFinished = { onSetMastery(task.id, sliderValue.toInt()) },
                     valueRange = 0f..100f,
-                    steps = 19,
                 )
                 MasteryChart(task)
+                Planner.masteryGap(task, today)?.let { gap ->
+                    val (text, warn) = when {
+                        gap >= 3 -> "習得度は目標ペースより ${gap}ポイント先行しています" to false
+                        gap <= -3 -> "習得度は目標ペースより ${-gap}ポイント遅れています。時間を増やすか、締切・内容を見直そう" to true
+                        else -> "習得度は目標ペースどおりです" to false
+                    }
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (warn) MaterialTheme.colorScheme.error else Color.Unspecified,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 Planner.learningRatePerHour(task)?.let { rate ->
                     Text(
                         "これまでのペース：作業1時間あたり 習得度 約${String.format(Locale.getDefault(), "%.1f", rate)}%",
@@ -460,7 +473,7 @@ private fun TimerRow(task: Task, onStart: (String) -> Unit, onStop: (String, Boo
     }
 }
 
-/** 習得度の推移（日ごとの記録）の折れ線グラフ。 */
+/** 習得度の推移（日ごとの記録）の折れ線グラフ。点線は「締切日に100%になる」目標ペース。 */
 @Composable
 private fun MasteryChart(task: Task) {
     val points = task.masteryLogs.toSortedMap().toList()
@@ -474,33 +487,61 @@ private fun MasteryChart(task: Task) {
     }
     val lineColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.outlineVariant
+    val targetColor = MaterialTheme.colorScheme.tertiary
     val first = points.first().first
-    val span = ChronoUnit.DAYS.between(first, points.last().first).coerceAtLeast(1).toFloat()
+    val last = points.last().first
+    val span = ChronoUnit.DAYS.between(first, last).coerceAtLeast(1).toFloat()
+    val targetStart = Planner.targetMastery(task, first)
+    val targetEnd = Planner.targetMastery(task, last)
 
-    Canvas(Modifier.fillMaxWidth().height(100.dp).padding(horizontal = 6.dp, vertical = 4.dp)) {
-        listOf(0f, 50f, 100f).forEach { v ->
-            val y = size.height * (1f - v / 100f)
-            drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Column(
+            modifier = Modifier.height(100.dp).padding(vertical = 2.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            listOf("100%", "50%", "0%").forEach { Text(it, style = MaterialTheme.typography.labelSmall) }
         }
-        val offsets = points.map { (date, value) ->
-            Offset(
-                x = size.width * ChronoUnit.DAYS.between(first, date).toFloat() / span,
-                y = size.height * (1f - value / 100f),
-            )
+        Canvas(Modifier.weight(1f).height(100.dp).padding(horizontal = 8.dp, vertical = 6.dp)) {
+            listOf(0f, 50f, 100f).forEach { v ->
+                val y = size.height * (1f - v / 100f)
+                drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+            }
+            if (targetStart != null && targetEnd != null) {
+                drawLine(
+                    color = targetColor,
+                    start = Offset(0f, size.height * (1f - targetStart.toFloat() / 100f)),
+                    end = Offset(size.width, size.height * (1f - targetEnd.toFloat() / 100f)),
+                    strokeWidth = 2.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f)),
+                )
+            }
+            val offsets = points.map { (date, value) ->
+                Offset(
+                    x = size.width * ChronoUnit.DAYS.between(first, date).toFloat() / span,
+                    y = size.height * (1f - value / 100f),
+                )
+            }
+            for (i in 0 until offsets.size - 1) {
+                drawLine(lineColor, offsets[i], offsets[i + 1], strokeWidth = 2.dp.toPx())
+            }
+            offsets.forEach { drawCircle(lineColor, radius = 4.dp.toPx(), center = it) }
         }
-        for (i in 0 until offsets.size - 1) {
-            drawLine(lineColor, offsets[i], offsets[i + 1], strokeWidth = 2.dp.toPx())
-        }
-        offsets.forEach { drawCircle(lineColor, radius = 4.dp.toPx(), center = it) }
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(Modifier.fillMaxWidth().padding(start = 36.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(
             "${first.monthValue}/${first.dayOfMonth}  ${points.first().second}%",
             style = MaterialTheme.typography.labelSmall,
         )
         Text(
-            "${points.last().first.monthValue}/${points.last().first.dayOfMonth}  ${points.last().second}%",
+            "${last.monthValue}/${last.dayOfMonth}  ${points.last().second}%",
             style = MaterialTheme.typography.labelSmall,
+        )
+    }
+    if (targetStart != null) {
+        Text(
+            "実線：あなたの習得度　点線：目標ペース（締切日に100%）",
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 2.dp),
         )
     }
 }
