@@ -31,21 +31,25 @@ fun TaskFormScreen(
     existingTasks: List<Task>,
     maxDailyHours: Double,
     modifier: Modifier = Modifier,
+    /** 編集するときは、その課題。新しく追加するときは null。 */
+    initial: Task? = null,
 ) {
     BackHandler(onBack = onCancel)
 
-    var name by rememberSaveable { mutableStateOf("") }
-    var deadlineText by rememberSaveable { mutableStateOf("") }
-    var hoursText by rememberSaveable { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf(initial?.name ?: "") }
+    var deadlineText by rememberSaveable { mutableStateOf(initial?.deadline?.toString() ?: "") }
+    var hoursText by rememberSaveable { mutableStateOf(initial?.totalHours?.let { formatInputHours(it) } ?: "") }
     var showPicker by rememberSaveable { mutableStateOf(false) }
     var submitted by rememberSaveable { mutableStateOf(false) }
     var levelName by rememberSaveable { mutableStateOf(StudyLevel.BEGINNER.name) }
     var estimateMessage by rememberSaveable { mutableStateOf("") }
-    var paceName by rememberSaveable { mutableStateOf(Pace.NORMAL.name) }
+    var paceName by rememberSaveable { mutableStateOf((initial?.pace ?: Pace.NORMAL).name) }
     val pace = Pace.valueOf(paceName)
     val level = StudyLevel.valueOf(levelName)
 
     val today = LocalDate.now()
+    // 編集のとき、すでに過ぎた締切のままなら、その日付までは許す（他の項目だけ直せるように）
+    val earliestAllowed = if (initial != null && initial.deadline.isBefore(today)) initial.deadline else today
     val deadline = deadlineText.takeIf { it.isNotEmpty() }?.let(LocalDate::parse)
     val hours = hoursText.toDoubleOrNull()
 
@@ -53,7 +57,7 @@ fun TaskFormScreen(
     val deadlineError = when {
         !submitted -> null
         deadline == null -> "締切日を選んでね"
-        deadline.isBefore(today) -> "締切日が既に過ぎているようです"
+        deadline.isBefore(earliestAllowed) -> "締切日が既に過ぎているようです"
         else -> null
     }
     val hoursError = if (submitted && (hours == null || hours <= 0)) "合計時間は正の数字で入力してね" else null
@@ -66,7 +70,7 @@ fun TaskFormScreen(
             .padding(24.dp),
     ) {
         Text(
-            text = "課題を追加",
+            text = if (initial == null) "課題を追加" else "課題を編集",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(bottom = 24.dp),
@@ -154,7 +158,7 @@ fun TaskFormScreen(
             }
         }
 
-        if (deadline != null && !deadline.isBefore(today) && hours != null && hours > 0) {
+        if (deadline != null && !deadline.isBefore(earliestAllowed) && hours != null && hours > 0) {
             val plan = Planner.dailyHours(today, deadline, hours * pace.factor)
             if (plan.isNotEmpty()) {
                 Card(
@@ -170,7 +174,7 @@ fun TaskFormScreen(
 
                 // 既存の課題と合わせて、1日の上限を超える日がないか確認する
                 val draft = Task("draft", name, today, deadline, hours, pace = pace)
-                val totals = Planner.totalsByDate(existingTasks + draft, today)
+                val totals = Planner.totalsByDate(existingTasks.filter { it.id != initial?.id } + draft, today)
                 val over = Planner.overloadedDays(totals, maxDailyHours)
                 if (over.isNotEmpty()) {
                     val feasible = Planner.earliestFeasibleDeadline(today, hours * pace.factor, maxDailyHours)
@@ -201,7 +205,7 @@ fun TaskFormScreen(
         Button(
             onClick = {
                 submitted = true
-                if (name.isNotBlank() && deadline != null && !deadline.isBefore(today) &&
+                if (name.isNotBlank() && deadline != null && !deadline.isBefore(earliestAllowed) &&
                     hours != null && hours > 0
                 ) {
                     onSave(name, deadline, hours, pace)
@@ -209,7 +213,7 @@ fun TaskFormScreen(
             },
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(12.dp),
-        ) { Text("計画に追加する") }
+        ) { Text(if (initial == null) "計画に追加する" else "保存する") }
 
         TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("キャンセル") }
     }
@@ -232,3 +236,7 @@ fun TaskFormScreen(
         ) { DatePicker(state = state) }
     }
 }
+
+/** 入力欄に出す時間（整数なら小数点なし）。 */
+private fun formatInputHours(hours: Double): String =
+    if (hours % 1.0 == 0.0) hours.toInt().toString() else hours.toString()

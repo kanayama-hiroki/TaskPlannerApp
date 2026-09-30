@@ -103,10 +103,27 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         it.copy(totalHours = totalHours, pace = Pace.NORMAL)
     }
 
-    fun delete(id: String) {
+    /** 課題の名前・締切・時間・ペースを直す。通知は新しい締切で予約し直す。 */
+    fun updateTask(id: String, name: String, deadline: LocalDate, totalHours: Double, pace: Pace) {
+        modify(id) { it.copy(name = name.trim(), deadline = deadline, totalHours = totalHours, pace = pace) }
+        tasks.firstOrNull { it.id == id }?.let { scheduleNotification(getApplication(), it) }
+    }
+
+    /** 課題を削除し、削除した課題を返す（「元に戻す」用）。 */
+    fun delete(id: String): Task? {
+        val removed = tasks.firstOrNull { it.id == id } ?: return null
         cancelNotification(getApplication(), id)
         cancelTimerNotification(getApplication(), id)
         update(tasks.filterNot { it.id == id })
+        return removed
+    }
+
+    /** 削除した課題を元に戻す。計測中だったタイマーは止まった状態に戻る。 */
+    fun restore(task: Task) {
+        if (tasks.any { it.id == task.id }) return
+        val restored = task.copy(timerStartedAt = null)
+        update(tasks + restored)
+        scheduleNotification(getApplication(), restored)
     }
 
     private fun modify(id: String, transform: (Task) -> Task) {
