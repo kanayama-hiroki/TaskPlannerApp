@@ -56,6 +56,8 @@ fun CalendarScreen(
     onStopTimer: (id: String, save: Boolean) -> Unit,
     maxDailyHours: Double,
     onChangeMaxDailyHours: (Double) -> Unit,
+    showDemo: Boolean,
+    onAddDemo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var monthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
@@ -138,6 +140,9 @@ fun CalendarScreen(
             onStartTimer = onStartTimer,
             onStopTimer = onStopTimer,
         )
+        if (showDemo) {
+            TextButton(onClick = onAddDemo) { Text("（開発用）デモの課題を追加") }
+        }
         Spacer(Modifier.height(88.dp)) // FAB と重ならない余白
     }
 }

@@ -45,6 +45,23 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         scheduleNotification(getApplication(), task)
     }
 
+    /** 動作確認用: 過去10日分の作業時間と習得度の記録が入った課題を追加する（デバッグビルドのみ画面に出る）。 */
+    fun addDemoTask() {
+        val today = LocalDate.now()
+        val hoursByDaysAgo = mapOf(9 to 1.5, 8 to 2.0, 6 to 2.5, 5 to 1.0, 4 to 2.0, 2 to 3.0, 1 to 1.5, 0 to 2.0)
+        val masteryByDaysAgo = mapOf(9 to 5, 7 to 12, 5 to 20, 3 to 31, 1 to 38, 0 to 45)
+        val task = Task(
+            id = UUID.randomUUID().toString(),
+            name = "【デモ】基本情報",
+            startDate = today.minusDays(9),
+            deadline = today.plusDays(20),
+            totalHours = 100.0,
+            logs = hoursByDaysAgo.mapKeys { today.minusDays(it.key.toLong()) },
+            masteryLogs = masteryByDaysAgo.mapKeys { today.minusDays(it.key.toLong()) },
+        )
+        update(tasks + task)
+    }
+
     fun toggleDone(id: String) = modify(id) { it.copy(done = !it.done) }
 
     /** その日の作業時間の記録を deltaHours だけ増減する（0 未満にはならない）。 */

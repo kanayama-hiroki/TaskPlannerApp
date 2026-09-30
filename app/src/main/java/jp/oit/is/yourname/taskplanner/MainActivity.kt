@@ -1,6 +1,7 @@
 package jp.oit.`is`.yourname.taskplanner
 
 import android.Manifest
+import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -89,6 +90,8 @@ fun TaskPlannerApp(viewModel: TaskViewModel) {
                 onAddLog = viewModel::addLog,
                 onSetMastery = viewModel::setMastery,
                 onApplyTotalHours = viewModel::applyTotalHours,
+                showDemo = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+                onAddDemo = viewModel::addDemoTask,
                 onStartTimer = viewModel::startTimer,
                 onStopTimer = viewModel::stopTimer,
                 maxDailyHours = viewModel.maxDailyHours,
