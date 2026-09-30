@@ -10,10 +10,13 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import jp.oit.`is`.yourname.taskplanner.planner.Planner
+import jp.oit.`is`.yourname.taskplanner.planner.StudyEstimator
+import jp.oit.`is`.yourname.taskplanner.planner.StudyLevel
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -32,6 +35,9 @@ fun TaskFormScreen(
     var hoursText by rememberSaveable { mutableStateOf("") }
     var showPicker by rememberSaveable { mutableStateOf(false) }
     var submitted by rememberSaveable { mutableStateOf(false) }
+    var levelName by rememberSaveable { mutableStateOf(StudyLevel.BEGINNER.name) }
+    var estimateMessage by rememberSaveable { mutableStateOf("") }
+    val level = StudyLevel.valueOf(levelName)
 
     val today = LocalDate.now()
     val deadline = deadlineText.takeIf { it.isNotEmpty() }?.let(LocalDate::parse)
@@ -69,6 +75,39 @@ fun TaskFormScreen(
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
         )
+
+        Text("資格名を入れると、勉強時間の目安を出せます", style = MaterialTheme.typography.bodySmall)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+        ) {
+            StudyLevel.entries.forEach { l ->
+                FilterChip(
+                    selected = l == level,
+                    onClick = { levelName = l.name },
+                    label = { Text(l.label) },
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+            }
+            TextButton(onClick = {
+                val e = StudyEstimator.estimate(name, level)
+                if (e == null) {
+                    estimateMessage = "この資格は内蔵の目安にありません。合計時間を自分で入力してね"
+                } else {
+                    hoursText = e.suggestedHours.toString()
+                    estimateMessage = "${e.certName}の目安は${e.minHours}〜${e.maxHours}時間（${level.label}）。" +
+                        "合計時間に${e.suggestedHours}時間を入れました。個人差が大きいので、自由に直してね"
+                }
+            }) { Text("勉強時間を推定") }
+        }
+        if (estimateMessage.isNotEmpty()) {
+            Text(
+                text = estimateMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+        }
 
         OutlinedButton(
             onClick = { showPicker = true },
