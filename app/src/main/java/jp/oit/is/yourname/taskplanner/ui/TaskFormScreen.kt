@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import jp.oit.`is`.yourname.taskplanner.data.Pace
 import jp.oit.`is`.yourname.taskplanner.planner.Planner
 import jp.oit.`is`.yourname.taskplanner.planner.StudyEstimator
 import jp.oit.`is`.yourname.taskplanner.planner.StudyLevel
@@ -24,7 +25,7 @@ import java.time.ZoneOffset
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskFormScreen(
-    onSave: (name: String, deadline: LocalDate, totalHours: Double) -> Unit,
+    onSave: (name: String, deadline: LocalDate, totalHours: Double, pace: Pace) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -37,6 +38,8 @@ fun TaskFormScreen(
     var submitted by rememberSaveable { mutableStateOf(false) }
     var levelName by rememberSaveable { mutableStateOf(StudyLevel.BEGINNER.name) }
     var estimateMessage by rememberSaveable { mutableStateOf("") }
+    var paceName by rememberSaveable { mutableStateOf(Pace.NORMAL.name) }
+    val pace = Pace.valueOf(paceName)
     val level = StudyLevel.valueOf(levelName)
 
     val today = LocalDate.now()
@@ -136,8 +139,20 @@ fun TaskFormScreen(
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
         )
 
+        Text("自分のペース（時間の見積もりに反映されます）", style = MaterialTheme.typography.bodySmall)
+        Row(modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)) {
+            Pace.entries.forEach { p ->
+                FilterChip(
+                    selected = p == pace,
+                    onClick = { paceName = p.name },
+                    label = { Text(p.label) },
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+            }
+        }
+
         if (deadline != null && !deadline.isBefore(today) && hours != null && hours > 0) {
-            val plan = Planner.dailyHours(today, deadline, hours)
+            val plan = Planner.dailyHours(today, deadline, hours * pace.factor)
             if (plan.isNotEmpty()) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
@@ -158,7 +173,7 @@ fun TaskFormScreen(
                 if (name.isNotBlank() && deadline != null && !deadline.isBefore(today) &&
                     hours != null && hours > 0
                 ) {
-                    onSave(name, deadline, hours)
+                    onSave(name, deadline, hours, pace)
                 }
             },
             modifier = Modifier.fillMaxWidth(),

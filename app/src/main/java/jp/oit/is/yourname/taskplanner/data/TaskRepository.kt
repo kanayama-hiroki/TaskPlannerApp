@@ -22,6 +22,11 @@ class TaskRepository(context: Context) {
                     deadline = LocalDate.parse(o.getString("deadline")),
                     totalHours = o.getDouble("totalHours"),
                     done = o.optBoolean("done", false),
+                    pace = Pace.entries.firstOrNull { it.name == o.optString("pace") } ?: Pace.NORMAL,
+                    logs = o.optJSONObject("logs")?.let { l ->
+                        l.keys().asSequence().associate { k -> LocalDate.parse(k) to l.getDouble(k) }
+                    } ?: emptyMap(),
+                    mastery = o.optInt("mastery", -1).takeIf { it >= 0 },
                 )
             }
         } catch (_: Exception) {
@@ -40,6 +45,9 @@ class TaskRepository(context: Context) {
                     .put("deadline", t.deadline.toString())
                     .put("totalHours", t.totalHours)
                     .put("done", t.done)
+                    .put("pace", t.pace.name)
+                    .put("logs", JSONObject().apply { t.logs.forEach { (d, h) -> put(d.toString(), h) } })
+                    .put("mastery", t.mastery ?: -1)
             )
         }
         prefs.edit().putString(KEY, array.toString()).apply()

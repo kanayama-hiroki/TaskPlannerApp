@@ -72,8 +72,8 @@ fun TaskPlannerApp(viewModel: TaskViewModel) {
     ) { innerPadding ->
         if (showForm) {
             TaskFormScreen(
-                onSave = { name, deadline, hours ->
-                    viewModel.add(name, deadline, hours)
+                onSave = { name, deadline, hours, pace ->
+                    viewModel.add(name, deadline, hours, pace)
                     showForm = false
                 },
                 onCancel = { showForm = false },
@@ -84,6 +84,9 @@ fun TaskPlannerApp(viewModel: TaskViewModel) {
                 tasks = viewModel.tasks,
                 onToggleDone = viewModel::toggleDone,
                 onDelete = viewModel::delete,
+                onAddLog = viewModel::addLog,
+                onSetMastery = viewModel::setMastery,
+                onApplyTotalHours = viewModel::applyTotalHours,
                 onAddToCalendarApp = { task ->
                     if (!openCalendarIntent(context, task)) {
                         Toast.makeText(context, "カレンダーアプリが見つかりません", Toast.LENGTH_SHORT).show()

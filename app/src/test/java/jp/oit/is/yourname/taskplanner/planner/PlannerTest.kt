@@ -1,5 +1,6 @@
 package jp.oit.`is`.yourname.taskplanner.planner
 
+import jp.oit.`is`.yourname.taskplanner.data.Pace
 import jp.oit.`is`.yourname.taskplanner.data.Task
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -45,13 +46,65 @@ class PlannerTest {
     }
 
     @Test
+    fun paceScalesPlannedHours() {
+        val slow = Task("a", "A", d(1), d(3), 4.0, pace = Pace.SLOW)
+        assertEquals(5.6, slow.plannedHours, 1e-9)
+        val fast = Task("b", "B", d(1), d(3), 5.0, pace = Pace.FAST)
+        assertEquals(4.0, fast.plannedHours, 1e-9)
+    }
+
+    @Test
     fun totalsSumOverlappingTasksAndSkipDone() {
         val a = Task("a", "A", d(1), d(3), 4.0) // 10/1, 10/2 に 2h
         val b = Task("b", "B", d(1), d(3), 2.0) // 10/1, 10/2 に 1h
         val c = Task("c", "C", d(1), d(3), 100.0, done = true)
-        val totals = Planner.totalsByDate(listOf(a, b, c))
+        val totals = Planner.totalsByDate(listOf(a, b, c), today = d(1))
         assertEquals(3.0, totals[d(1)]!!, 1e-9)
         assertEquals(3.0, totals[d(2)]!!, 1e-9)
         assertNull(totals[d(3)])
+    }
+
+    @Test
+    fun planReplansRemainingHoursAfterLogging() {
+        // 10/1〜10/6 締切、8h。10/1 に 1h だけやった状態で 10/2 になった
+        val task = Task("a", "A", d(1), d(6), 8.0, logs = mapOf(d(1) to 1.0))
+        val plan = Planner.plan(task, today = d(2))
+        assertEquals(1.0, plan[d(1)]!!, 1e-9) // 過去は実績
+        // 残り 7h を 10/2〜10/5（10/5 は予備日）→ 3日で 7/3h
+        assertEquals(7.0 / 3, plan[d(2)]!!, 1e-9)
+        assertEquals(7.0 / 3, plan[d(4)]!!, 1e-9)
+        assertNull(plan[d(5)])
+        assertEquals(8.0, plan.values.sum(), 1e-9)
+    }
+
+    @Test
+    fun statusDetectsBehindAndDone() {
+        val onTrack = Task("a", "A", d(1), d(6), 8.0, logs = mapOf(d(1) to 2.0))
+        assertEquals(PlanStatus.ON_TRACK, Planner.status(onTrack, today = d(2)))
+
+        val behind = Task("b", "B", d(1), d(6), 8.0) // 10/3 まで何もしていない
+        assertEquals(PlanStatus.BEHIND, Planner.status(behind, today = d(3)))
+
+        val overdue = Task("c", "C", d(1), d(3), 8.0)
+        assertEquals(PlanStatus.OVERDUE, Planner.status(overdue, today = d(5)))
+
+        val finished = Task("d", "D", d(1), d(3), 2.0, logs = mapOf(d(1) to 2.0))
+        assertEquals(PlanStatus.DONE, Planner.status(finished, today = d(2)))
+    }
+
+    @Test
+    fun reestimateUsesMasteryAndLoggedHours() {
+        val task = Task("a", "A", d(1), d(20), 10.0, logs = mapOf(d(1) to 5.0), mastery = 25)
+        assertEquals(20.0, Planner.reestimatedTotal(task)!!, 1e-9)
+
+        assertNull(Planner.reestimatedTotal(task.copy(mastery = 5)))
+        assertNull(Planner.reestimatedTotal(task.copy(mastery = null)))
+        assertNull(Planner.reestimatedTotal(task.copy(logs = mapOf(d(1) to 0.5))))
+    }
+
+    @Test
+    fun progressIsCappedAtOne() {
+        val task = Task("a", "A", d(1), d(5), 2.0, logs = mapOf(d(1) to 5.0))
+        assertEquals(1f, Planner.progress(task), 1e-6f)
     }
 }
