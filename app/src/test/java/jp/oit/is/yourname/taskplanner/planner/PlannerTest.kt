@@ -93,13 +93,36 @@ class PlannerTest {
     }
 
     @Test
-    fun reestimateUsesMasteryAndLoggedHours() {
-        val task = Task("a", "A", d(1), d(20), 10.0, logs = mapOf(d(1) to 5.0), mastery = 25)
+    fun reestimateFromSingleMasteryRecordAssumesStartingAtZero() {
+        // 5h やって習得度 25% → 1時間あたり 5%。残り 75% は 15h → 合計 20h
+        val task = Task("a", "A", d(1), d(20), 10.0, logs = mapOf(d(1) to 5.0), masteryLogs = mapOf(d(1) to 25))
+        assertEquals(5.0, Planner.learningRatePerHour(task)!!, 1e-9)
+        assertEquals(15.0, Planner.remainingHoursByRate(task)!!, 1e-9)
         assertEquals(20.0, Planner.reestimatedTotal(task)!!, 1e-9)
+    }
 
-        assertNull(Planner.reestimatedTotal(task.copy(mastery = 5)))
-        assertNull(Planner.reestimatedTotal(task.copy(mastery = null)))
-        assertNull(Planner.reestimatedTotal(task.copy(logs = mapOf(d(1) to 0.5))))
+    @Test
+    fun reestimateUsesGrowthBetweenMasteryRecords() {
+        // 10/1 に習得度 20%（その日までに 2h）、10/5 に 60%（その日までに合計 10h）
+        // 伸び 40% ÷ 追加作業 8h = 5%/h。残り 40% は 8h → 合計 18h
+        val logs = mapOf(d(1) to 2.0, d(3) to 4.0, d(5) to 4.0)
+        val task = Task("a", "A", d(1), d(20), 10.0, logs = logs, masteryLogs = mapOf(d(1) to 20, d(5) to 60))
+        assertEquals(5.0, Planner.learningRatePerHour(task)!!, 1e-9)
+        assertEquals(18.0, Planner.reestimatedTotal(task)!!, 1e-9)
+    }
+
+    @Test
+    fun reestimateNeedsEnoughData() {
+        val task = Task("a", "A", d(1), d(20), 10.0, logs = mapOf(d(1) to 5.0), masteryLogs = mapOf(d(1) to 25))
+        assertNull(Planner.reestimatedTotal(task.copy(masteryLogs = mapOf(d(1) to 5)))) // 伸びが小さすぎる
+        assertNull(Planner.reestimatedTotal(task.copy(masteryLogs = emptyMap())))
+        assertNull(Planner.reestimatedTotal(task.copy(logs = mapOf(d(1) to 0.5)))) // 作業が少なすぎる
+    }
+
+    @Test
+    fun latestMasteryIsTheMostRecentRecord() {
+        val task = Task("a", "A", d(1), d(20), 10.0, masteryLogs = mapOf(d(2) to 40, d(1) to 10, d(3) to 35))
+        assertEquals(35, task.mastery)
     }
 
     @Test

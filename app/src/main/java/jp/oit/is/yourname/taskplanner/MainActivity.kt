@@ -89,6 +89,8 @@ fun TaskPlannerApp(viewModel: TaskViewModel) {
                 onAddLog = viewModel::addLog,
                 onSetMastery = viewModel::setMastery,
                 onApplyTotalHours = viewModel::applyTotalHours,
+                onStartTimer = viewModel::startTimer,
+                onStopTimer = viewModel::stopTimer,
                 maxDailyHours = viewModel.maxDailyHours,
                 onChangeMaxDailyHours = viewModel::changeMaxDailyHours,
                 onAddToCalendarApp = { task ->

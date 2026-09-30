@@ -2,6 +2,7 @@ package jp.oit.`is`.yourname.taskplanner.notification
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -64,6 +65,34 @@ fun scheduleNotification(context: Context, task: Task) {
 
 fun cancelNotification(context: Context, taskId: String) {
     WorkManager.getInstance(context).cancelUniqueWork(workName(taskId))
+}
+
+private fun timerNotificationId(taskId: String) = taskId.hashCode()
+
+/** 作業タイマー計測中の通知（経過時間が自動で進む）。通知をタップするとアプリに戻る。 */
+fun showTimerNotification(context: Context, task: Task, startedAtMillis: Long) {
+    val manager = context.getSystemService(NotificationManager::class.java)
+    if (!manager.areNotificationsEnabled()) return
+
+    val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+    val contentIntent = launch?.let {
+        PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+    val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .setContentTitle("作業中：${task.name}")
+        .setContentText("タイマーを止めるには、アプリを開いてね")
+        .setWhen(startedAtMillis)
+        .setUsesChronometer(true)
+        .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setContentIntent(contentIntent)
+        .build()
+    manager.notify(timerNotificationId(task.id), notification)
+}
+
+fun cancelTimerNotification(context: Context, taskId: String) {
+    context.getSystemService(NotificationManager::class.java).cancel(timerNotificationId(taskId))
 }
 
 /** 標準カレンダーアプリに締切を終日予定として追加する画面を開く。 */

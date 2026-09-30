@@ -1,6 +1,7 @@
 package jp.oit.`is`.yourname.taskplanner.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -29,6 +31,8 @@ import jp.oit.`is`.yourname.taskplanner.planner.PlanStatus
 import jp.oit.`is`.yourname.taskplanner.planner.Planner
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 private val WEEKDAYS = listOf("日", "月", "火", "水", "木", "金", "土")
@@ -48,6 +52,8 @@ fun CalendarScreen(
     onAddLog: (id: String, date: LocalDate, deltaHours: Double) -> Unit,
     onSetMastery: (id: String, mastery: Int) -> Unit,
     onApplyTotalHours: (id: String, totalHours: Double) -> Unit,
+    onStartTimer: (String) -> Unit,
+    onStopTimer: (id: String, save: Boolean) -> Unit,
     maxDailyHours: Double,
     onChangeMaxDailyHours: (Double) -> Unit,
     modifier: Modifier = Modifier,
@@ -129,6 +135,8 @@ fun CalendarScreen(
             onAddToCalendarApp = onAddToCalendarApp,
             onSetMastery = onSetMastery,
             onApplyTotalHours = onApplyTotalHours,
+            onStartTimer = onStartTimer,
+            onStopTimer = onStopTimer,
         )
         Spacer(Modifier.height(88.dp)) // FAB と重ならない余白
     }
@@ -269,11 +277,16 @@ private fun ProgressSection(
     onAddToCalendarApp: (Task) -> Unit,
     onSetMastery: (String, Int) -> Unit,
     onApplyTotalHours: (String, Double) -> Unit,
+    onStartTimer: (String) -> Unit,
+    onStopTimer: (String, Boolean) -> Unit,
 ) {
     if (tasks.isEmpty()) return
     Text("課題ごとの進み具合", style = MaterialTheme.typography.titleMedium)
     tasks.sortedBy { it.deadline }.forEach { task ->
-        TaskProgressCard(task, today, onToggleDone, onDelete, onAddToCalendarApp, onSetMastery, onApplyTotalHours)
+        TaskProgressCard(
+            task, today, onToggleDone, onDelete, onAddToCalendarApp,
+            onSetMastery, onApplyTotalHours, onStartTimer, onStopTimer,
+        )
     }
 }
 
@@ -286,6 +299,8 @@ private fun TaskProgressCard(
     onAddToCalendarApp: (Task) -> Unit,
     onSetMastery: (String, Int) -> Unit,
     onApplyTotalHours: (String, Double) -> Unit,
+    onStartTimer: (String) -> Unit,
+    onStopTimer: (String, Boolean) -> Unit,
 ) {
     val status = Planner.status(task, today)
     var sliderValue by remember(task.id, task.mastery) { mutableFloatStateOf((task.mastery ?: 0).toFloat()) }
@@ -345,6 +360,8 @@ private fun TaskProgressCard(
                     Text(message, style = MaterialTheme.typography.bodySmall)
                 }
 
+                TimerRow(task, onStartTimer, onStopTimer)
+
                 Text(
                     "習得度（自己評価）: ${sliderValue.toInt()}%",
                     style = MaterialTheme.typography.bodyMedium,
@@ -357,9 +374,17 @@ private fun TaskProgressCard(
                     valueRange = 0f..100f,
                     steps = 19,
                 )
+                MasteryChart(task)
+                Planner.learningRatePerHour(task)?.let { rate ->
+                    Text(
+                        "これまでのペース：作業1時間あたり 習得度 約${String.format(Locale.getDefault(), "%.1f", rate)}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 if (differsMuch && reestimate != null) {
                     Text(
-                        "これまでの作業と習得度からみると、あなたの場合は合計 約${formatHours(reestimate)} かかりそうです" +
+                        "今のペースだと、あなたの場合は合計 約${formatHours(reestimate)} かかりそうです" +
                             "（今の計画は ${formatHours(task.plannedHours)}）。目安なので、参考にしてね。",
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -367,5 +392,110 @@ private fun TaskProgressCard(
                 }
             }
         }
+    }
+}
+
+private const val LONG_SESSION_HOURS = 4.0
+
+private fun formatElapsed(ms: Long): String {
+    val total = (ms / 1000).coerceAtLeast(0)
+    return String.format(Locale.getDefault(), "%02d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
+}
+
+/** 作業タイマー。開始時刻を保存しているので、アプリを閉じても経過時間はずれない。 */
+@Composable
+private fun TimerRow(task: Task, onStart: (String) -> Unit, onStop: (String, Boolean) -> Unit) {
+    if (task.done) return
+    val started = task.timerStartedAt
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var confirmLong by remember { mutableStateOf(false) }
+
+    LaunchedEffect(started) {
+        if (started != null) {
+            while (true) {
+                now = System.currentTimeMillis()
+                delay(1000)
+            }
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
+        if (started == null) {
+            FilledTonalButton(onClick = { onStart(task.id) }) { Text("▶ 作業を始める") }
+            Text(
+                "  やった時間を自動で記録します",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        } else {
+            val elapsed = now - started
+            Button(onClick = {
+                if (elapsed / 3_600_000.0 > LONG_SESSION_HOURS) confirmLong = true else onStop(task.id, true)
+            }) { Text("■ 止める") }
+            Text(
+                "  計測中 ${formatElapsed(elapsed)}",
+                style = MaterialTheme.typography.titleSmall,
+            )
+        }
+    }
+
+    if (confirmLong && started != null) {
+        AlertDialog(
+            onDismissRequest = { confirmLong = false },
+            title = { Text("長時間の計測です") },
+            text = {
+                Text("${formatElapsed(now - started)} 計測しています。止め忘れていませんか？ この時間を記録しますか？")
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmLong = false; onStop(task.id, true) }) { Text("記録する") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmLong = false; onStop(task.id, false) }) { Text("記録せず止める") }
+            },
+        )
+    }
+}
+
+/** 習得度の推移（日ごとの記録）の折れ線グラフ。 */
+@Composable
+private fun MasteryChart(task: Task) {
+    val points = task.masteryLogs.toSortedMap().toList()
+    if (points.size < 2) {
+        Text(
+            "習得度を2日以上記録すると、推移のグラフが見えます",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        return
+    }
+    val lineColor = MaterialTheme.colorScheme.primary
+    val gridColor = MaterialTheme.colorScheme.outlineVariant
+    val first = points.first().first
+    val span = ChronoUnit.DAYS.between(first, points.last().first).coerceAtLeast(1).toFloat()
+
+    Canvas(Modifier.fillMaxWidth().height(100.dp).padding(horizontal = 6.dp, vertical = 4.dp)) {
+        listOf(0f, 50f, 100f).forEach { v ->
+            val y = size.height * (1f - v / 100f)
+            drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+        }
+        val offsets = points.map { (date, value) ->
+            Offset(
+                x = size.width * ChronoUnit.DAYS.between(first, date).toFloat() / span,
+                y = size.height * (1f - value / 100f),
+            )
+        }
+        for (i in 0 until offsets.size - 1) {
+            drawLine(lineColor, offsets[i], offsets[i + 1], strokeWidth = 2.dp.toPx())
+        }
+        offsets.forEach { drawCircle(lineColor, radius = 4.dp.toPx(), center = it) }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(
+            "${first.monthValue}/${first.dayOfMonth}  ${points.first().second}%",
+            style = MaterialTheme.typography.labelSmall,
+        )
+        Text(
+            "${points.last().first.monthValue}/${points.last().first.dayOfMonth}  ${points.last().second}%",
+            style = MaterialTheme.typography.labelSmall,
+        )
     }
 }

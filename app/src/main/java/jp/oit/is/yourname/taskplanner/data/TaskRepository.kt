@@ -26,12 +26,22 @@ class TaskRepository(context: Context) {
                     logs = o.optJSONObject("logs")?.let { l ->
                         l.keys().asSequence().associate { k -> LocalDate.parse(k) to l.getDouble(k) }
                     } ?: emptyMap(),
-                    mastery = o.optInt("mastery", -1).takeIf { it >= 0 },
+                    masteryLogs = loadMasteryLogs(o),
+                    timerStartedAt = o.optLong("timerStartedAt", -1L).takeIf { it >= 0 },
                 )
             }
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    private fun loadMasteryLogs(o: JSONObject): Map<LocalDate, Int> {
+        o.optJSONObject("masteryLogs")?.let { m ->
+            return m.keys().asSequence().associate { k -> LocalDate.parse(k) to m.getInt(k) }
+        }
+        // 旧形式（日付なしの習得度1つ）からの移行: 開始日の記録として扱う
+        val legacy = o.optInt("mastery", -1)
+        return if (legacy >= 0) mapOf(LocalDate.parse(o.getString("startDate")) to legacy) else emptyMap()
     }
 
     fun save(tasks: List<Task>) {
@@ -47,7 +57,8 @@ class TaskRepository(context: Context) {
                     .put("done", t.done)
                     .put("pace", t.pace.name)
                     .put("logs", JSONObject().apply { t.logs.forEach { (d, h) -> put(d.toString(), h) } })
-                    .put("mastery", t.mastery ?: -1)
+                    .put("masteryLogs", JSONObject().apply { t.masteryLogs.forEach { (d, m) -> put(d.toString(), m) } })
+                    .put("timerStartedAt", t.timerStartedAt ?: -1L)
             )
         }
         prefs.edit().putString(KEY, array.toString()).apply()

@@ -20,10 +20,15 @@ data class Task(
     val pace: Pace = Pace.NORMAL,
     /** 日ごとの実際の作業時間の記録。 */
     val logs: Map<LocalDate, Double> = emptyMap(),
-    /** 自己評価の習得度（0〜100）。未入力は null。 */
-    val mastery: Int? = null,
+    /** 日ごとの自己評価の習得度（0〜100）。同じ日は最後の値。 */
+    val masteryLogs: Map<LocalDate, Int> = emptyMap(),
+    /** 作業タイマーの開始時刻（エポックミリ秒）。計測していなければ null。 */
+    val timerStartedAt: Long? = null,
 ) {
     /** ペース補正後の、計画に使う合計時間。 */
     val plannedHours: Double get() = totalHours * pace.factor
     val loggedHours: Double get() = logs.values.sum()
+
+    /** 最新の習得度。未記録は null。 */
+    val mastery: Int? get() = masteryLogs.maxByOrNull { it.key }?.value
 }

@@ -78,13 +78,45 @@ object Planner {
     }
 
     /**
-     * 自己評価の習得度から、自分の場合に必要な合計時間を再見積もりする。
-     * 「ここまでの作業時間 ÷ 習得度」。記録が少なすぎる・習得度が低すぎると当てにならないので null。
+     * これまでの「作業1時間あたりの習得度の伸び（%/時間）」。記録が足りなければ null。
+     *
+     * 習得度の記録が2日以上あれば、最初の記録を基準に、その後の伸びと作業時間から計算する。
+     * 記録が1つだけのときは、0% から始めたものとして、最新の習得度とそれまでの作業時間から計算する。
+     */
+    fun learningRatePerHour(task: Task): Double? {
+        val points = task.masteryLogs.toSortedMap().toList()
+        val latest = points.lastOrNull() ?: return null
+
+        fun hoursUpTo(date: LocalDate) = task.logs.filterKeys { !it.isAfter(date) }.values.sum()
+
+        val gain: Double
+        val hours: Double
+        if (points.size >= 2) {
+            val first = points.first()
+            gain = (latest.second - first.second).toDouble()
+            hours = hoursUpTo(latest.first) - hoursUpTo(first.first)
+        } else {
+            gain = latest.second.toDouble()
+            hours = hoursUpTo(latest.first)
+        }
+        if (gain < MIN_GAIN_FOR_ESTIMATE || hours < MIN_LOGGED_FOR_ESTIMATE) return null
+        return gain / hours
+    }
+
+    /** 今のペースで習得度100%に届くまでの、残りの作業時間。見積もれなければ null。 */
+    fun remainingHoursByRate(task: Task): Double? {
+        val rate = learningRatePerHour(task) ?: return null
+        val mastery = task.mastery ?: return null
+        return (100 - mastery).coerceAtLeast(0) / rate
+    }
+
+    /**
+     * 自分のペースで見積もり直した合計時間（ここまでの作業時間＋残り）。
+     * 「時間あたりの伸び」が計算できないときは null。
      */
     fun reestimatedTotal(task: Task): Double? {
-        val mastery = task.mastery ?: return null
-        if (mastery < MIN_MASTERY_FOR_ESTIMATE || task.loggedHours < MIN_LOGGED_FOR_ESTIMATE) return null
-        return task.loggedHours / (mastery / 100.0)
+        val remaining = remainingHoursByRate(task) ?: return null
+        return task.loggedHours + remaining
     }
 
     /** 上限（1日あたり）に収まる、最も早い締切日。見つからなければ null。 */
@@ -105,6 +137,6 @@ object Planner {
 
     private const val MAX_SEARCH_DAYS = 365 * 3
     private const val BEHIND_RATIO = 1.25
-    private const val MIN_MASTERY_FOR_ESTIMATE = 10
+    private const val MIN_GAIN_FOR_ESTIMATE = 10
     private const val MIN_LOGGED_FOR_ESTIMATE = 1.0
 }
