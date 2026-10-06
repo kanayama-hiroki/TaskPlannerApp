@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -25,11 +27,16 @@ import jp.oit.`is`.yourname.taskplanner.data.Task
 import jp.oit.`is`.yourname.taskplanner.planner.Planner
 import java.time.LocalDate
 import java.time.YearMonth
+import kotlinx.coroutines.launch
 
 /** 作業時間がこの値以上の日を最も濃い色にする。 */
 private const val HEAVY_DAY_HOURS = 4.0
 
-/** 月表示のカレンダー。日ごとの作業時間を色の濃さで示し、日付をタップするとその日の予定が出る。 */
+/** 月のページ番号の基準（今月）。左右にスワイプして前後の月へ動かせる。 */
+private const val BASE_PAGE = 1200
+private const val PAGE_COUNT = BASE_PAGE * 2
+
+/** 月表示のカレンダー。日ごとの作業時間を色の濃さで示し、日付をタップするとその日の予定が出る。左右にスワイプして月を動かせる。 */
 @Composable
 fun CalendarScreen(
     tasks: List<Task>,
@@ -40,9 +47,11 @@ fun CalendarScreen(
     onOpenTask: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var monthText by rememberSaveable { mutableStateOf(YearMonth.from(today).toString()) }
+    val thisMonth = remember(today) { YearMonth.from(today) }
+    val pagerState = rememberPagerState(initialPage = BASE_PAGE) { PAGE_COUNT }
+    val scope = rememberCoroutineScope()
+    val month = thisMonth.plusMonths((pagerState.currentPage - BASE_PAGE).toLong())
     var selectedText by rememberSaveable { mutableStateOf(today.toString()) }
-    val month = YearMonth.parse(monthText)
     val selected = LocalDate.parse(selectedText)
 
     val totals = remember(tasks, today) { Planner.totalsByDate(tasks, today) }
@@ -55,7 +64,7 @@ fun CalendarScreen(
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            IconButton(onClick = { monthText = month.minusMonths(1).toString() }) {
+            IconButton(onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "前の月")
             }
             Text(
@@ -64,7 +73,7 @@ fun CalendarScreen(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = { monthText = month.plusMonths(1).toString() }) {
+            IconButton(onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "次の月")
             }
         }
@@ -81,22 +90,32 @@ fun CalendarScreen(
             }
         }
 
-        val leadingBlanks = month.atDay(1).dayOfWeek.value % 7 // 日曜始まり
-        val cells: List<LocalDate?> = List(leadingBlanks) { null } + (1..month.lengthOfMonth()).map { month.atDay(it) }
-        cells.chunked(7).forEach { week ->
-            Row(Modifier.fillMaxWidth()) {
-                (week + List(7 - week.size) { null }).forEach { date ->
-                    Box(Modifier.weight(1f).padding(1.dp)) {
-                        if (date != null) {
-                            DayCell(
-                                date = date,
-                                hours = totals[date] ?: 0.0,
-                                overLimit = (totals[date] ?: 0.0) > maxDailyHours + 1e-9,
-                                isDeadline = date in deadlines,
-                                isToday = date == today,
-                                isSelected = date == selected,
-                                onClick = { selectedText = date.toString() },
-                            )
+        // 左右にスワイプして月を切り替える。高さが月ごとに変わらないよう、常に6週間分の行を並べる。
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { page ->
+            val pageMonth = thisMonth.plusMonths((page - BASE_PAGE).toLong())
+            val leadingBlanks = pageMonth.atDay(1).dayOfWeek.value % 7 // 日曜始まり
+            val cells: List<LocalDate?> = List(leadingBlanks) { null } +
+                (1..pageMonth.lengthOfMonth()).map { pageMonth.atDay(it) }
+            Column(Modifier.fillMaxWidth()) {
+                repeat(6) { week ->
+                    Row(Modifier.fillMaxWidth()) {
+                        repeat(7) { col ->
+                            val date = cells.getOrNull(week * 7 + col)
+                            Box(Modifier.weight(1f).padding(1.dp)) {
+                                if (date != null) {
+                                    DayCell(
+                                        date = date,
+                                        hours = totals[date] ?: 0.0,
+                                        overLimit = (totals[date] ?: 0.0) > maxDailyHours + 1e-9,
+                                        isDeadline = date in deadlines,
+                                        isToday = date == today,
+                                        isSelected = date == selected,
+                                        onClick = { selectedText = date.toString() },
+                                    )
+                                } else {
+                                    Spacer(Modifier.fillMaxWidth().height(64.dp))
+                                }
+                            }
                         }
                     }
                 }
@@ -177,7 +196,7 @@ private fun DayCell(
 @Composable
 private fun CalendarLegend() {
     Text(
-        "色が濃い日ほど、作業時間が多い日です。赤い枠（!）は、1日の上限を超える日です。",
+        "左右にスワイプすると月が変わります。色が濃い日ほど作業時間が多く、赤い枠（!）は1日の上限を超える日です。",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 8.dp),
