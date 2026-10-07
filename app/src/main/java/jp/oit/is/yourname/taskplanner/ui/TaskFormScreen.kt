@@ -1,0 +1,276 @@
+package jp.oit.`is`.yourname.taskplanner.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import jp.oit.`is`.yourname.taskplanner.data.Pace
+import jp.oit.`is`.yourname.taskplanner.data.Task
+import jp.oit.`is`.yourname.taskplanner.planner.Planner
+import jp.oit.`is`.yourname.taskplanner.planner.StepTemplate
+import jp.oit.`is`.yourname.taskplanner.planner.StudyEstimator
+import jp.oit.`is`.yourname.taskplanner.planner.StudyLevel
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TaskFormScreen(
+    onSave: (name: String, deadline: LocalDate, totalHours: Double, pace: Pace, steps: List<StepTemplate>) -> Unit,
+    onCancel: () -> Unit,
+    existingTasks: List<Task>,
+    maxDailyHours: Double,
+    modifier: Modifier = Modifier,
+    /** 編集するときは、その課題。新しく追加するときは null。 */
+    initial: Task? = null,
+) {
+    BackHandler(onBack = onCancel)
+
+    var name by rememberSaveable { mutableStateOf(initial?.name ?: "") }
+    var deadlineText by rememberSaveable { mutableStateOf(initial?.deadline?.toString() ?: "") }
+    var hoursText by rememberSaveable { mutableStateOf(initial?.totalHours?.let { formatInputHours(it) } ?: "") }
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+    var submitted by rememberSaveable { mutableStateOf(false) }
+    var levelName by rememberSaveable { mutableStateOf(StudyLevel.BEGINNER.name) }
+    var estimateMessage by rememberSaveable { mutableStateOf("") }
+    // 推定で見つかった資格名。空なら、学習ステップのひな形は入れない
+    var stepCert by rememberSaveable { mutableStateOf("") }
+    var useSteps by rememberSaveable { mutableStateOf(true) }
+    var ownSteps by rememberSaveable { mutableStateOf(false) }
+    var paceName by rememberSaveable { mutableStateOf((initial?.pace ?: Pace.NORMAL).name) }
+    val pace = Pace.valueOf(paceName)
+    val level = StudyLevel.valueOf(levelName)
+
+    val today = LocalDate.now()
+    // 編集のとき、すでに過ぎた締切のままなら、その日付までは許す（他の項目だけ直せるように）
+    val earliestAllowed = if (initial != null && initial.deadline.isBefore(today)) initial.deadline else today
+    val deadline = deadlineText.takeIf { it.isNotEmpty() }?.let(LocalDate::parse)
+    val hours = hoursText.toDoubleOrNull()
+
+    val nameError = if (submitted && name.isBlank()) "課題名を入力してね" else null
+    val deadlineError = when {
+        !submitted -> null
+        deadline == null -> "締切日を選んでね"
+        deadline.isBefore(earliestAllowed) -> "締切日が既に過ぎているようです"
+        else -> null
+    }
+    val hoursError = if (submitted && (hours == null || hours <= 0)) "合計時間は正の数字で入力してね" else null
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .imePadding()
+            .padding(24.dp),
+    ) {
+        Text(
+            text = if (initial == null) "課題を追加" else "課題を編集",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 24.dp),
+        )
+
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("課題名（例：プログラミング演習）") },
+            isError = nameError != null,
+            supportingText = nameError?.let { { Text(it) } },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        )
+
+        Text("資格名を入れると、勉強時間の目安を出せます", style = MaterialTheme.typography.bodySmall)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+        ) {
+            StudyLevel.entries.forEach { l ->
+                FilterChip(
+                    selected = l == level,
+                    onClick = { levelName = l.name },
+                    label = { Text(l.label) },
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+            }
+            TextButton(onClick = {
+                val e = StudyEstimator.estimate(name, level)
+                if (e == null) {
+                    stepCert = ""
+                    estimateMessage = "この資格は内蔵の目安にありません。合計時間を自分で入力してね"
+                } else {
+                    stepCert = e.certName
+                    ownSteps = e.hasOwnSteps
+                    hoursText = e.suggestedHours.toString()
+                    estimateMessage = "${e.certName}の目安は${e.minHours}〜${e.maxHours}時間（${level.label}）。" +
+                        "合計時間に${e.suggestedHours}時間を入れました。個人差が大きいので、自由に直してね"
+                }
+            }) { Text("勉強時間を推定") }
+        }
+        if (estimateMessage.isNotEmpty()) {
+            Text(
+                text = estimateMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+        }
+
+        if (initial == null && stepCert.isNotEmpty()) {
+            val templates = StudyEstimator.stepsFor(stepCert)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = useSteps, onCheckedChange = { useSteps = it })
+                Text(
+                    "${stepCert}の学習ステップ（${templates.size}個）も入れる",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+            if (useSteps) {
+                Text(
+                    (if (ownSteps) "" else "この資格の専用ステップはまだ無いので、共通の3段階を入れます。\n") +
+                        templates.mapIndexed { i, t -> "${i + 1}. ${t.title}" }.joinToString("\n") +
+                        "\n（入れたあと、詳細画面で足したり消したりできます）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 12.dp, bottom = 12.dp),
+                )
+            }
+        }
+
+        OutlinedButton(
+            onClick = { showPicker = true },
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(16.dp),
+        ) {
+            Icon(Icons.Default.DateRange, contentDescription = null)
+            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+            Text(if (deadline == null) "締切日を選ぶ" else "締切日: $deadline")
+        }
+        Text(
+            text = deadlineError ?: " ",
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 8.dp),
+        )
+
+        OutlinedTextField(
+            value = hoursText,
+            onValueChange = { hoursText = it },
+            label = { Text("完了に必要な合計時間 (時間)") },
+            isError = hoursError != null,
+            supportingText = hoursError?.let { { Text(it) } },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        )
+
+        Text("自分のペース（時間の見積もりに反映されます）", style = MaterialTheme.typography.bodySmall)
+        Row(modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)) {
+            Pace.entries.forEach { p ->
+                FilterChip(
+                    selected = p == pace,
+                    onClick = { paceName = p.name },
+                    label = { Text(p.label) },
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+            }
+        }
+
+        if (deadline != null && !deadline.isBefore(earliestAllowed) && hours != null && hours > 0) {
+            val plan = Planner.dailyHours(today, deadline, hours * pace.factor)
+            if (plan.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                ) {
+                    Text(
+                        text = "今日から${plan.size}日間、毎日 ${formatHours(plan.values.first())} 進めましょう！",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+
+                // 既存の課題と合わせて、1日の上限を超える日がないか確認する
+                val draft = Task("draft", name, today, deadline, hours, pace = pace)
+                val totals = Planner.totalsByDate(existingTasks.filter { it.id != initial?.id } + draft, today)
+                val over = Planner.overloadedDays(totals, maxDailyHours)
+                if (over.isNotEmpty()) {
+                    val feasible = Planner.earliestFeasibleDeadline(today, hours * pace.factor, maxDailyHours)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                "この計画だと、1日の上限（${formatHours(maxDailyHours)}）を超える日が${over.size}日あります。",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = if (feasible != null) {
+                                    "この課題だけなら、締切を $feasible 以降にすると上限に収まります。締切や時間を見直しませんか？"
+                                } else {
+                                    "締切や時間を見直しませんか？"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Button(
+            onClick = {
+                submitted = true
+                if (name.isNotBlank() && deadline != null && !deadline.isBefore(earliestAllowed) &&
+                    hours != null && hours > 0
+                ) {
+                    val steps = if (initial == null && useSteps && stepCert.isNotEmpty()) {
+                        StudyEstimator.stepsFor(stepCert)
+                    } else {
+                        emptyList()
+                    }
+                    onSave(name, deadline, hours, pace, steps)
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(12.dp),
+        ) { Text(if (initial == null) "計画に追加する" else "保存する") }
+
+        TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("キャンセル") }
+    }
+
+    if (showPicker) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = (deadline ?: today).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let {
+                        deadlineText = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toString()
+                    }
+                    showPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showPicker = false }) { Text("キャンセル") } },
+        ) { DatePicker(state = state) }
+    }
+}
+
+/** 入力欄に出す時間（整数なら小数点なし）。 */
+private fun formatInputHours(hours: Double): String =
+    if (hours % 1.0 == 0.0) hours.toInt().toString() else hours.toString()
