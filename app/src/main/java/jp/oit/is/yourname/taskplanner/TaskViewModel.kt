@@ -6,16 +6,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import jp.oit.`is`.yourname.taskplanner.data.Pace
+import jp.oit.`is`.yourname.taskplanner.data.Step
 import jp.oit.`is`.yourname.taskplanner.data.Task
 import jp.oit.`is`.yourname.taskplanner.data.TaskRepository
 import jp.oit.`is`.yourname.taskplanner.notification.cancelNotification
 import jp.oit.`is`.yourname.taskplanner.notification.cancelTimerNotification
 import jp.oit.`is`.yourname.taskplanner.notification.showTimerNotification
 import jp.oit.`is`.yourname.taskplanner.notification.scheduleNotification
+import jp.oit.`is`.yourname.taskplanner.planner.StepTemplate
+import jp.oit.`is`.yourname.taskplanner.planner.StudyEstimator
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import kotlin.math.roundToInt
 
 class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = TaskRepository(app)
@@ -32,7 +36,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         repository.saveMaxDailyHours(maxDailyHours)
     }
 
-    fun add(name: String, deadline: LocalDate, totalHours: Double, pace: Pace) {
+    fun add(name: String, deadline: LocalDate, totalHours: Double, pace: Pace, steps: List<StepTemplate> = emptyList()) {
         val task = Task(
             id = UUID.randomUUID().toString(),
             name = name.trim(),
@@ -40,16 +44,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             deadline = deadline,
             totalHours = totalHours,
             pace = pace,
+            steps = steps.map { Step(UUID.randomUUID().toString(), it.title, it.goal, it.weight) },
         )
         update(tasks + task)
         scheduleNotification(getApplication(), task)
     }
 
-    /** 動作確認用: 過去10日分の作業時間と習得度の記録が入った課題を追加する（デバッグビルドのみ画面に出る）。 */
+    /** 動作確認用: 過去10日分の作業時間の記録と、いくつか達成済みのステップが入った課題を追加する（デバッグビルドのみ画面に出る）。 */
     fun addDemoTask() {
         val today = LocalDate.now()
         val hoursByDaysAgo = mapOf(9 to 1.5, 8 to 2.0, 6 to 2.5, 5 to 1.0, 4 to 2.0, 2 to 3.0, 1 to 1.5, 0 to 2.0)
-        val masteryByDaysAgo = mapOf(9 to 5, 7 to 12, 5 to 20, 3 to 31, 1 to 38, 0 to 45)
         val task = Task(
             id = UUID.randomUUID().toString(),
             name = "【デモ】基本情報",
@@ -57,7 +61,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             deadline = today.plusDays(20),
             totalHours = 100.0,
             logs = hoursByDaysAgo.mapKeys { today.minusDays(it.key.toLong()) },
-            masteryLogs = masteryByDaysAgo.mapKeys { today.minusDays(it.key.toLong()) },
+            steps = StudyEstimator.stepsFor("基本情報技術者").mapIndexed { i, t ->
+                Step(UUID.randomUUID().toString(), t.title, t.goal, t.weight, done = i < 2)
+            },
         )
         update(tasks + task)
     }
@@ -71,9 +77,19 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         task.copy(logs = logs)
     }
 
-    /** 今日の習得度として記録する（同じ日は上書き）。 */
-    fun setMastery(id: String, mastery: Int) = modify(id) {
-        it.copy(masteryLogs = it.masteryLogs + (LocalDate.now() to mastery.coerceIn(0, 100)))
+    /** ステップの達成・未達成を切り替える。 */
+    fun toggleStep(taskId: String, stepId: String) = modify(taskId) { task ->
+        task.copy(steps = task.steps.map { if (it.id == stepId) it.copy(done = !it.done) else it })
+    }
+
+    /** ステップを末尾に足す。重みは、いまのステップの平均に合わせる（最初の1つは 1）。 */
+    fun addStep(taskId: String, title: String, goal: String) = modify(taskId) { task ->
+        val weight = if (task.steps.isEmpty()) 1 else task.steps.map { it.weight }.average().roundToInt().coerceAtLeast(1)
+        task.copy(steps = task.steps + Step(UUID.randomUUID().toString(), title.trim(), goal.trim(), weight))
+    }
+
+    fun deleteStep(taskId: String, stepId: String) = modify(taskId) { task ->
+        task.copy(steps = task.steps.filterNot { it.id == stepId })
     }
 
     /** 作業タイマーを開始する。すでに計測中・完了済みの課題では何もしない。 */

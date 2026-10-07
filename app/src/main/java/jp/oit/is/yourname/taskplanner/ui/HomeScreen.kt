@@ -196,6 +196,13 @@ private fun TodayTaskCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Planner.nextStep(task)?.let { step ->
+                Text(
+                    "次にやること：${step.title}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
 
             TimerRow(task, onStartTimer, onStopTimer)
 

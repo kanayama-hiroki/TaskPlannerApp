@@ -1,6 +1,7 @@
 package jp.oit.`is`.yourname.taskplanner.planner
 
 import jp.oit.`is`.yourname.taskplanner.data.Pace
+import jp.oit.`is`.yourname.taskplanner.data.Step
 import jp.oit.`is`.yourname.taskplanner.data.Task
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -92,37 +93,48 @@ class PlannerTest {
         assertEquals(PlanStatus.DONE, Planner.status(finished, today = d(2)))
     }
 
+    private fun steps(vararg done: Boolean) =
+        done.mapIndexed { i, isDone -> Step("s$i", "ステップ$i", weight = 1, done = isDone) }
+
     @Test
-    fun reestimateFromSingleMasteryRecordAssumesStartingAtZero() {
-        // 5h やって習得度 25% → 1時間あたり 5%。残り 75% は 15h → 合計 20h
-        val task = Task("a", "A", d(1), d(20), 10.0, logs = mapOf(d(1) to 5.0), masteryLogs = mapOf(d(1) to 25))
-        assertEquals(5.0, Planner.learningRatePerHour(task)!!, 1e-9)
-        assertEquals(15.0, Planner.remainingHoursByRate(task)!!, 1e-9)
+    fun stepProgressCountsDoneWeight() {
+        val task = Task("a", "A", d(1), d(20), 10.0, steps = listOf(
+            Step("1", "小", weight = 1, done = true),
+            Step("2", "大", weight = 3, done = false),
+        ))
+        assertEquals(0.25f, Planner.stepProgress(task)!!, 1e-6f)
+        assertNull(Planner.stepProgress(task.copy(steps = emptyList())))
+    }
+
+    @Test
+    fun stepHoursSplitPlannedHoursByWeight() {
+        val big = Step("2", "大", weight = 3)
+        val task = Task("a", "A", d(1), d(20), 8.0, steps = listOf(Step("1", "小", weight = 1), big))
+        assertEquals(6.0, Planner.stepHours(task, big), 1e-9)
+        assertEquals(8.0, task.steps.sumOf { Planner.stepHours(task, it) }, 1e-9)
+    }
+
+    @Test
+    fun nextStepIsFirstNotDone() {
+        val task = Task("a", "A", d(1), d(20), 10.0, steps = steps(true, false, true))
+        assertEquals("s1", Planner.nextStep(task)!!.id)
+        assertNull(Planner.nextStep(task.copy(steps = steps(true, true))))
+    }
+
+    @Test
+    fun reestimateFromStepProgress() {
+        // 4ステップのうち1つ（25%）を、5h かけて終えた → 全部で 20h
+        val task = Task("a", "A", d(1), d(20), 10.0, logs = mapOf(d(1) to 5.0), steps = steps(true, false, false, false))
         assertEquals(20.0, Planner.reestimatedTotal(task)!!, 1e-9)
     }
 
     @Test
-    fun reestimateUsesGrowthBetweenMasteryRecords() {
-        // 10/1 に習得度 20%（その日までに 2h）、10/5 に 60%（その日までに合計 10h）
-        // 伸び 40% ÷ 追加作業 8h = 5%/h。残り 40% は 8h → 合計 18h
-        val logs = mapOf(d(1) to 2.0, d(3) to 4.0, d(5) to 4.0)
-        val task = Task("a", "A", d(1), d(20), 10.0, logs = logs, masteryLogs = mapOf(d(1) to 20, d(5) to 60))
-        assertEquals(5.0, Planner.learningRatePerHour(task)!!, 1e-9)
-        assertEquals(18.0, Planner.reestimatedTotal(task)!!, 1e-9)
-    }
-
-    @Test
     fun reestimateNeedsEnoughData() {
-        val task = Task("a", "A", d(1), d(20), 10.0, logs = mapOf(d(1) to 5.0), masteryLogs = mapOf(d(1) to 25))
-        assertNull(Planner.reestimatedTotal(task.copy(masteryLogs = mapOf(d(1) to 5)))) // 伸びが小さすぎる
-        assertNull(Planner.reestimatedTotal(task.copy(masteryLogs = emptyMap())))
-        assertNull(Planner.reestimatedTotal(task.copy(logs = mapOf(d(1) to 0.5)))) // 作業が少なすぎる
-    }
-
-    @Test
-    fun latestMasteryIsTheMostRecentRecord() {
-        val task = Task("a", "A", d(1), d(20), 10.0, masteryLogs = mapOf(d(2) to 40, d(1) to 10, d(3) to 35))
-        assertEquals(35, task.mastery)
+        val base = Task("a", "A", d(1), d(20), 10.0, logs = mapOf(d(1) to 5.0), steps = steps(true, false, false, false))
+        assertNull(Planner.reestimatedTotal(base.copy(steps = emptyList()))) // ステップなし
+        assertNull(Planner.reestimatedTotal(base.copy(steps = steps(false, false, false, false)))) // 1つも終わっていない
+        assertNull(Planner.reestimatedTotal(base.copy(steps = steps(true, true, true, true)))) // 全部終わっている
+        assertNull(Planner.reestimatedTotal(base.copy(logs = mapOf(d(1) to 0.5)))) // 作業が少なすぎる
     }
 
     @Test
@@ -156,36 +168,5 @@ class PlannerLimitTest {
     fun invalidInputsGiveNull() {
         assertNull(Planner.earliestFeasibleDeadline(d(1), 0.0, 2.0))
         assertNull(Planner.earliestFeasibleDeadline(d(1), 5.0, 0.0))
-    }
-}
-
-class PlannerMasteryTargetTest {
-    private val d = { day: Int -> LocalDate.of(2026, 10, day) }
-
-    @Test
-    fun targetMasteryRisesLinearlyToHundredAtDeadline() {
-        val task = Task("a", "A", d(1), d(11), 10.0, masteryLogs = mapOf(d(1) to 10))
-        assertEquals(10.0, Planner.targetMastery(task, d(1))!!, 1e-9)
-        assertEquals(55.0, Planner.targetMastery(task, d(6))!!, 1e-9)
-        assertEquals(100.0, Planner.targetMastery(task, d(11))!!, 1e-9)
-        assertEquals(100.0, Planner.targetMastery(task, d(20))!!, 1e-9) // 締切後は100%で頭打ち
-    }
-
-    @Test
-    fun masteryGapComparesLatestWithTodaysTarget() {
-        val ahead = Task("a", "A", d(1), d(11), 10.0, masteryLogs = mapOf(d(1) to 10, d(6) to 60))
-        assertEquals(5, Planner.masteryGap(ahead, today = d(6)))
-        val behind = ahead.copy(masteryLogs = mapOf(d(1) to 10, d(6) to 40))
-        assertEquals(-15, Planner.masteryGap(behind, today = d(6)))
-    }
-
-    @Test
-    fun noTargetWithoutEnoughRecords() {
-        val none = Task("a", "A", d(1), d(11), 10.0)
-        assertNull(Planner.targetMastery(none, d(3)))
-        val one = none.copy(masteryLogs = mapOf(d(1) to 10))
-        assertNull(Planner.masteryGap(one, d(3)))
-        val pastDeadline = none.copy(deadline = d(1), masteryLogs = mapOf(d(1) to 10))
-        assertNull(Planner.targetMastery(pastDeadline, d(1)))
     }
 }

@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import jp.oit.`is`.yourname.taskplanner.data.Pace
 import jp.oit.`is`.yourname.taskplanner.data.Task
 import jp.oit.`is`.yourname.taskplanner.planner.Planner
+import jp.oit.`is`.yourname.taskplanner.planner.StepTemplate
 import jp.oit.`is`.yourname.taskplanner.planner.StudyEstimator
 import jp.oit.`is`.yourname.taskplanner.planner.StudyLevel
 import java.time.Instant
@@ -26,7 +27,7 @@ import java.time.ZoneOffset
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskFormScreen(
-    onSave: (name: String, deadline: LocalDate, totalHours: Double, pace: Pace) -> Unit,
+    onSave: (name: String, deadline: LocalDate, totalHours: Double, pace: Pace, steps: List<StepTemplate>) -> Unit,
     onCancel: () -> Unit,
     existingTasks: List<Task>,
     maxDailyHours: Double,
@@ -43,6 +44,10 @@ fun TaskFormScreen(
     var submitted by rememberSaveable { mutableStateOf(false) }
     var levelName by rememberSaveable { mutableStateOf(StudyLevel.BEGINNER.name) }
     var estimateMessage by rememberSaveable { mutableStateOf("") }
+    // 推定で見つかった資格名。空なら、学習ステップのひな形は入れない
+    var stepCert by rememberSaveable { mutableStateOf("") }
+    var useSteps by rememberSaveable { mutableStateOf(true) }
+    var ownSteps by rememberSaveable { mutableStateOf(false) }
     var paceName by rememberSaveable { mutableStateOf((initial?.pace ?: Pace.NORMAL).name) }
     val pace = Pace.valueOf(paceName)
     val level = StudyLevel.valueOf(levelName)
@@ -102,8 +107,11 @@ fun TaskFormScreen(
             TextButton(onClick = {
                 val e = StudyEstimator.estimate(name, level)
                 if (e == null) {
+                    stepCert = ""
                     estimateMessage = "この資格は内蔵の目安にありません。合計時間を自分で入力してね"
                 } else {
+                    stepCert = e.certName
+                    ownSteps = e.hasOwnSteps
                     hoursText = e.suggestedHours.toString()
                     estimateMessage = "${e.certName}の目安は${e.minHours}〜${e.maxHours}時間（${level.label}）。" +
                         "合計時間に${e.suggestedHours}時間を入れました。個人差が大きいので、自由に直してね"
@@ -117,6 +125,27 @@ fun TaskFormScreen(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
+        }
+
+        if (initial == null && stepCert.isNotEmpty()) {
+            val templates = StudyEstimator.stepsFor(stepCert)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = useSteps, onCheckedChange = { useSteps = it })
+                Text(
+                    "${stepCert}の学習ステップ（${templates.size}個）も入れる",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+            if (useSteps) {
+                Text(
+                    (if (ownSteps) "" else "この資格の専用ステップはまだ無いので、共通の3段階を入れます。\n") +
+                        templates.mapIndexed { i, t -> "${i + 1}. ${t.title}" }.joinToString("\n") +
+                        "\n（入れたあと、詳細画面で足したり消したりできます）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 12.dp, bottom = 12.dp),
+                )
+            }
         }
 
         OutlinedButton(
@@ -208,7 +237,12 @@ fun TaskFormScreen(
                 if (name.isNotBlank() && deadline != null && !deadline.isBefore(earliestAllowed) &&
                     hours != null && hours > 0
                 ) {
-                    onSave(name, deadline, hours, pace)
+                    val steps = if (initial == null && useSteps && stepCert.isNotEmpty()) {
+                        StudyEstimator.stepsFor(stepCert)
+                    } else {
+                        emptyList()
+                    }
+                    onSave(name, deadline, hours, pace, steps)
                 }
             },
             modifier = Modifier.fillMaxWidth(),

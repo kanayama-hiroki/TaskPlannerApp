@@ -1,6 +1,5 @@
 package jp.oit.`is`.yourname.taskplanner.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
@@ -8,12 +7,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.unit.dp
 import jp.oit.`is`.yourname.taskplanner.data.Task
 import jp.oit.`is`.yourname.taskplanner.planner.PlanStatus
-import jp.oit.`is`.yourname.taskplanner.planner.Planner
 import kotlinx.coroutines.delay
 import java.time.temporal.ChronoUnit
 import java.util.Locale
@@ -127,79 +123,6 @@ fun TimerRow(task: Task, onStart: (String) -> Unit, onStop: (String, Boolean) ->
             dismissButton = {
                 TextButton(onClick = { confirmLong = false; onStop(task.id, false) }) { Text("記録せず止める") }
             },
-        )
-    }
-}
-
-/** 習得度の推移（日ごとの記録）の折れ線グラフ。点線は「締切日に100%になる」目標ペース。 */
-@Composable
-fun MasteryChart(task: Task) {
-    val points = task.masteryLogs.toSortedMap().toList()
-    if (points.size < 2) {
-        Text(
-            "習得度を2日以上記録すると、推移のグラフが見えます",
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        return
-    }
-    val lineColor = MaterialTheme.colorScheme.primary
-    val gridColor = MaterialTheme.colorScheme.outlineVariant
-    val targetColor = MaterialTheme.colorScheme.tertiary
-    val first = points.first().first
-    val last = points.last().first
-    val span = ChronoUnit.DAYS.between(first, last).coerceAtLeast(1).toFloat()
-    val targetStart = Planner.targetMastery(task, first)
-    val targetEnd = Planner.targetMastery(task, last)
-
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Column(
-            modifier = Modifier.height(100.dp).padding(vertical = 2.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            listOf("100%", "50%", "0%").forEach { Text(it, style = MaterialTheme.typography.labelSmall) }
-        }
-        Canvas(Modifier.weight(1f).height(100.dp).padding(horizontal = 8.dp, vertical = 6.dp)) {
-            listOf(0f, 50f, 100f).forEach { v ->
-                val y = size.height * (1f - v / 100f)
-                drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
-            }
-            if (targetStart != null && targetEnd != null) {
-                drawLine(
-                    color = targetColor,
-                    start = Offset(0f, size.height * (1f - targetStart.toFloat() / 100f)),
-                    end = Offset(size.width, size.height * (1f - targetEnd.toFloat() / 100f)),
-                    strokeWidth = 2.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f)),
-                )
-            }
-            val offsets = points.map { (date, value) ->
-                Offset(
-                    x = size.width * ChronoUnit.DAYS.between(first, date).toFloat() / span,
-                    y = size.height * (1f - value / 100f),
-                )
-            }
-            for (i in 0 until offsets.size - 1) {
-                drawLine(lineColor, offsets[i], offsets[i + 1], strokeWidth = 2.dp.toPx())
-            }
-            offsets.forEach { drawCircle(lineColor, radius = 4.dp.toPx(), center = it) }
-        }
-    }
-    Row(Modifier.fillMaxWidth().padding(start = 36.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(
-            "${first.monthValue}/${first.dayOfMonth}  ${points.first().second}%",
-            style = MaterialTheme.typography.labelSmall,
-        )
-        Text(
-            "${last.monthValue}/${last.dayOfMonth}  ${points.last().second}%",
-            style = MaterialTheme.typography.labelSmall,
-        )
-    }
-    if (targetStart != null) {
-        Text(
-            "実線：あなたの習得度　点線：目標ペース（締切日に100%）",
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(top = 2.dp),
         )
     }
 }

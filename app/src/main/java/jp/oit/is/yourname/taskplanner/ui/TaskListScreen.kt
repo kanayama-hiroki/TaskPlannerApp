@@ -77,7 +77,7 @@ private fun TaskSummaryCard(task: Task, today: LocalDate, onOpenTask: (String) -
             )
             Text(
                 "作業 ${formatHours(task.loggedHours)} / 計画 ${formatHours(task.plannedHours)}" +
-                    (task.mastery?.let { "　習得度 $it%" } ?: ""),
+                    (task.steps.takeIf { it.isNotEmpty() }?.let { st -> "　ステップ ${st.count { it.done }}/${st.size}" } ?: ""),
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (!task.done) {

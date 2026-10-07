@@ -9,6 +9,17 @@ enum class Pace(val label: String, val factor: Double) {
     SLOW("ゆっくり", 1.4),
 }
 
+/** 課題の中の「やること」1つ。何を、どこまでやれば済みか（goal）を持つ。 */
+data class Step(
+    val id: String,
+    val title: String,
+    /** 達成の目安（どこまでできれば、このステップを終えてよいか）。 */
+    val goal: String = "",
+    /** 全ステップの中での大きさ。合計時間を、この比率でステップに配分する。 */
+    val weight: Int = 1,
+    val done: Boolean = false,
+)
+
 data class Task(
     val id: String,
     val name: String,
@@ -20,15 +31,12 @@ data class Task(
     val pace: Pace = Pace.NORMAL,
     /** 日ごとの実際の作業時間の記録。 */
     val logs: Map<LocalDate, Double> = emptyMap(),
-    /** 日ごとの自己評価の習得度（0〜100）。同じ日は最後の値。 */
-    val masteryLogs: Map<LocalDate, Int> = emptyMap(),
+    /** 「何を、どこまでやるか」のステップ。空なら、時間だけで進み具合を見る。 */
+    val steps: List<Step> = emptyList(),
     /** 作業タイマーの開始時刻（エポックミリ秒）。計測していなければ null。 */
     val timerStartedAt: Long? = null,
 ) {
     /** ペース補正後の、計画に使う合計時間。 */
     val plannedHours: Double get() = totalHours * pace.factor
     val loggedHours: Double get() = logs.values.sum()
-
-    /** 最新の習得度。未記録は null。 */
-    val mastery: Int? get() = masteryLogs.maxByOrNull { it.key }?.value
 }

@@ -26,7 +26,7 @@ class TaskRepository(context: Context) {
                     logs = o.optJSONObject("logs")?.let { l ->
                         l.keys().asSequence().associate { k -> LocalDate.parse(k) to l.getDouble(k) }
                     } ?: emptyMap(),
-                    masteryLogs = loadMasteryLogs(o),
+                    steps = loadSteps(o),
                     timerStartedAt = o.optLong("timerStartedAt", -1L).takeIf { it >= 0 },
                 )
             }
@@ -35,13 +35,18 @@ class TaskRepository(context: Context) {
         }
     }
 
-    private fun loadMasteryLogs(o: JSONObject): Map<LocalDate, Int> {
-        o.optJSONObject("masteryLogs")?.let { m ->
-            return m.keys().asSequence().associate { k -> LocalDate.parse(k) to m.getInt(k) }
+    private fun loadSteps(o: JSONObject): List<Step> {
+        val array = o.optJSONArray("steps") ?: return emptyList()
+        return (0 until array.length()).map { i ->
+            val st = array.getJSONObject(i)
+            Step(
+                id = st.getString("id"),
+                title = st.getString("title"),
+                goal = st.optString("goal", ""),
+                weight = st.optInt("weight", 1).coerceAtLeast(1),
+                done = st.optBoolean("done", false),
+            )
         }
-        // 旧形式（日付なしの習得度1つ）からの移行: 開始日の記録として扱う
-        val legacy = o.optInt("mastery", -1)
-        return if (legacy >= 0) mapOf(LocalDate.parse(o.getString("startDate")) to legacy) else emptyMap()
     }
 
     fun save(tasks: List<Task>) {
@@ -57,7 +62,21 @@ class TaskRepository(context: Context) {
                     .put("done", t.done)
                     .put("pace", t.pace.name)
                     .put("logs", JSONObject().apply { t.logs.forEach { (d, h) -> put(d.toString(), h) } })
-                    .put("masteryLogs", JSONObject().apply { t.masteryLogs.forEach { (d, m) -> put(d.toString(), m) } })
+                    .put(
+                        "steps",
+                        JSONArray().apply {
+                            t.steps.forEach { st ->
+                                put(
+                                    JSONObject()
+                                        .put("id", st.id)
+                                        .put("title", st.title)
+                                        .put("goal", st.goal)
+                                        .put("weight", st.weight)
+                                        .put("done", st.done)
+                                )
+                            }
+                        },
+                    )
                     .put("timerStartedAt", t.timerStartedAt ?: -1L)
             )
         }

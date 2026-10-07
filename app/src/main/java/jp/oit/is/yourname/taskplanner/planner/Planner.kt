@@ -1,9 +1,8 @@
 package jp.oit.`is`.yourname.taskplanner.planner
 
+import jp.oit.`is`.yourname.taskplanner.data.Step
 import jp.oit.`is`.yourname.taskplanner.data.Task
 import java.time.LocalDate
-import java.time.temporal.ChronoUnit
-import kotlin.math.roundToInt
 
 enum class PlanStatus { DONE, ON_TRACK, BEHIND, OVERDUE }
 
@@ -79,66 +78,31 @@ object Planner {
         return if (requiredPerDay > originalPerDay * BEHIND_RATIO) PlanStatus.BEHIND else PlanStatus.ON_TRACK
     }
 
-    /**
-     * これまでの「作業1時間あたりの習得度の伸び（%/時間）」。記録が足りなければ null。
-     *
-     * 習得度の記録が2日以上あれば、最初の記録を基準に、その後の伸びと作業時間から計算する。
-     * 記録が1つだけのときは、0% から始めたものとして、最新の習得度とそれまでの作業時間から計算する。
-     */
-    fun learningRatePerHour(task: Task): Double? {
-        val points = task.masteryLogs.toSortedMap().toList()
-        val latest = points.lastOrNull() ?: return null
-
-        fun hoursUpTo(date: LocalDate) = task.logs.filterKeys { !it.isAfter(date) }.values.sum()
-
-        val gain: Double
-        val hours: Double
-        if (points.size >= 2) {
-            val first = points.first()
-            gain = (latest.second - first.second).toDouble()
-            hours = hoursUpTo(latest.first) - hoursUpTo(first.first)
-        } else {
-            gain = latest.second.toDouble()
-            hours = hoursUpTo(latest.first)
-        }
-        if (gain < MIN_GAIN_FOR_ESTIMATE || hours < MIN_LOGGED_FOR_ESTIMATE) return null
-        return gain / hours
+    /** ステップの達成度（0.0〜1.0）。ステップが無ければ null。大きいステップほど重く数える。 */
+    fun stepProgress(task: Task): Float? {
+        val total = task.steps.sumOf { it.weight }
+        if (total <= 0) return null
+        return task.steps.filter { it.done }.sumOf { it.weight }.toFloat() / total
     }
 
-    /** 今のペースで習得度100%に届くまでの、残りの作業時間。見積もれなければ null。 */
-    fun remainingHoursByRate(task: Task): Double? {
-        val rate = learningRatePerHour(task) ?: return null
-        val mastery = task.mastery ?: return null
-        return (100 - mastery).coerceAtLeast(0) / rate
+    /** ステップ1つぶんの時間の目安。ペース補正後の合計時間を、重みの比率で配分する。 */
+    fun stepHours(task: Task, step: Step): Double {
+        val total = task.steps.sumOf { it.weight }
+        return if (total <= 0) 0.0 else task.plannedHours * step.weight / total
     }
 
+    /** 次にやるステップ（まだ終えていない先頭）。全部終えていれば null。 */
+    fun nextStep(task: Task): Step? = task.steps.firstOrNull { !it.done }
+
     /**
-     * 自分のペースで見積もり直した合計時間（ここまでの作業時間＋残り）。
-     * 「時間あたりの伸び」が計算できないときは null。
+     * ここまでのステップの進み方から、自分のペースで見積もり直した合計時間。
+     * 「達成したステップの割合」と「かけた時間」から、全部終えるまでの時間を割り出す。
+     * ステップが少ししか終わっていない、作業時間が少ない、全部終えているときは null。
      */
     fun reestimatedTotal(task: Task): Double? {
-        val remaining = remainingHoursByRate(task) ?: return null
-        return task.loggedHours + remaining
-    }
-
-    /**
-     * 最初の習得度の記録を出発点に、締切日に100%へ届く一定ペースだった場合の、指定日の目標習得度。
-     * 習得度の記録がない、または出発点が締切以降なら null。
-     */
-    fun targetMastery(task: Task, date: LocalDate): Double? {
-        val first = task.masteryLogs.toSortedMap().entries.firstOrNull() ?: return null
-        val totalDays = ChronoUnit.DAYS.between(first.key, task.deadline)
-        if (totalDays <= 0) return null
-        val elapsed = ChronoUnit.DAYS.between(first.key, date).coerceIn(0, totalDays)
-        return first.value + (100 - first.value) * elapsed.toDouble() / totalDays
-    }
-
-    /** 最新の習得度が、今日の目標より何ポイント先行（＋）・遅れ（−）しているか。記録が2日未満なら null。 */
-    fun masteryGap(task: Task, today: LocalDate): Int? {
-        if (task.masteryLogs.size < 2) return null
-        val latest = task.mastery ?: return null
-        val target = targetMastery(task, today) ?: return null
-        return (latest - target).roundToInt()
+        val share = stepProgress(task) ?: return null
+        if (share < MIN_STEP_SHARE || share >= 1f || task.loggedHours < MIN_LOGGED_FOR_ESTIMATE) return null
+        return task.loggedHours / share
     }
 
     /** 上限（1日あたり）に収まる、最も早い締切日。見つからなければ null。 */
@@ -159,6 +123,6 @@ object Planner {
 
     private const val MAX_SEARCH_DAYS = 365 * 3
     private const val BEHIND_RATIO = 1.25
-    private const val MIN_GAIN_FOR_ESTIMATE = 10
+    private const val MIN_STEP_SHARE = 0.2
     private const val MIN_LOGGED_FOR_ESTIMATE = 1.0
 }

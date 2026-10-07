@@ -160,11 +160,11 @@ fun TaskPlannerApp(viewModel: TaskViewModel) {
         when {
             showForm -> TaskFormScreen(
                 initial = editingTask,
-                onSave = { name, deadline, hours, pace ->
+                onSave = { name, deadline, hours, pace, steps ->
                     if (editingTask != null) {
                         viewModel.updateTask(editingTask.id, name, deadline, hours, pace)
                     } else {
-                        viewModel.add(name, deadline, hours, pace)
+                        viewModel.add(name, deadline, hours, pace, steps)
                     }
                     closeForm()
                 },
@@ -178,7 +178,9 @@ fun TaskPlannerApp(viewModel: TaskViewModel) {
                 task = detailTask,
                 today = today,
                 onToggleDone = viewModel::toggleDone,
-                onSetMastery = viewModel::setMastery,
+                onToggleStep = viewModel::toggleStep,
+                onAddStep = viewModel::addStep,
+                onDeleteStep = viewModel::deleteStep,
                 onApplyTotalHours = viewModel::applyTotalHours,
                 onStartTimer = viewModel::startTimer,
                 onStopTimer = viewModel::stopTimer,
